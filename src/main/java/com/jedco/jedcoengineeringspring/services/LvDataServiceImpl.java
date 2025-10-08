@@ -97,38 +97,51 @@ public class LvDataServiceImpl implements LvDataService {
     @Transactional
     public ResponseDto insertLvData(LvDataRegisterRequest lvDataRegisterDto, String username) {
         try {
-//            Optional<PoleData> optionalPoleData = poleDataRepository.findOneByPoleNoAndTxNo(lvDataRegisterDto.poleNo(), lvDataRegisterDto.txNo());
-            Optional<TxInfo> optionalTransformer= txInfoRepository.findById(lvDataRegisterDto.txId());
-            if(optionalTransformer.isEmpty()){
+            Optional<TxInfo> optionalTransformer = txInfoRepository.findById(lvDataRegisterDto.txId());
+            if (optionalTransformer.isEmpty()) {
                 return new ResponseDto(false, "Transformer code not found!");
             }
-            var transformer= optionalTransformer.get();
-//            Optional<PoleData> optionalPoleData = poleDataRepository.findOneByPoleNoAndTransformerTrafoCode(lvDataRegisterDto.poleNo(), lvDataRegisterDto.txNo());
-            Optional<PoleData> optionalPoleData = poleDataRepository.findOneByPoleNoAndTransformer(lvDataRegisterDto.poleNo(), transformer);
+            var transformer = optionalTransformer.get();
+
+            // 🔹 Prevent duplicate pole registration for the same transformer
+            Optional<PoleData> optionalPoleData =
+                    poleDataRepository.findOneByPoleNoAndTransformer(lvDataRegisterDto.poleNo(), transformer);
             if (optionalPoleData.isPresent()) {
-                return new ResponseDto(false, "Pole No. Already registered with the same Tx Code.");
+                return new ResponseDto(false, "Pole No. already registered with the same transformer.");
             }
 
-            Long activeStatus= 1L;
+            Long activeStatus = 1L;
+
+            // 🔹 1. Check for duplicates *within* the submitted meter list
+            Set<String> submittedMeterNos = new HashSet<>();
             for (LvMeterDataRequest meter : lvDataRegisterDto.meterDataDtoList()) {
-                MeterData meterData = meterDataRepository.findOneByMeterNoAndStatusId(meter.meterNo(),activeStatus);
-                if(meterData!=null){
-                    return new ResponseDto(false, "Meter No. "+meter.meterNo()+" Already registered in the system");
+                if (!submittedMeterNos.add(meter.meterNo())) {
+                    return new ResponseDto(false, "Duplicate meter number found in submission: " + meter.meterNo());
                 }
             }
-            LongLatResponse longLatResponse= utMtoLangLatService.convertUTMToLangLat(lvDataRegisterDto.northing(), lvDataRegisterDto.easting());
-            Status status = statusRepository.findById(activeStatus).get();
-            User user = userRepository.findByUsername(username).get();
+
+            // 🔹 2. Check if any submitted meter already exists in DB
+            for (LvMeterDataRequest meter : lvDataRegisterDto.meterDataDtoList()) {
+                MeterData existing = meterDataRepository.findOneByMeterNoAndStatusId(meter.meterNo(), activeStatus);
+                if (existing != null) {
+                    return new ResponseDto(false,
+                            "Meter No. " + meter.meterNo() + " is already registered in the system.");
+                }
+            }
+
+            // 🔹 3. Proceed to save if all validations pass
+            LongLatResponse longLatResponse =
+                    utMtoLangLatService.convertUTMToLangLat(lvDataRegisterDto.northing(), lvDataRegisterDto.easting());
+            Status status = statusRepository.findById(activeStatus).orElseThrow();
+            User user = userRepository.findByUsername(username).orElseThrow();
 
             PoleData poleData = new PoleData();
-//            poleData.setFeeder(lvDataRegisterDto.feeder());
             poleData.setAssemblyType(lvDataRegisterDto.assemblyType());
             poleData.setBranchCode(lvDataRegisterDto.branchCode());
             poleData.setConductorType(lvDataRegisterDto.conductorType());
             poleData.setPoleType(lvDataRegisterDto.poleType());
             poleData.setPoleFeature(lvDataRegisterDto.poleFeature());
             poleData.setPoleNo(lvDataRegisterDto.poleNo());
-//            poleData.setTxNo(lvDataRegisterDto.txNo());
             poleData.setTransformer(transformer);
             poleData.setRegisteredBy(user);
             poleData.setStatus(status);
@@ -142,17 +155,16 @@ public class LvDataServiceImpl implements LvDataService {
             poleData.setPole_anomaly(lvDataRegisterDto.pole_anomaly());
             poleData.setPoleRegType(lvDataRegisterDto.poleRegisterationType());
             poleData.setUpdatedOn(new Date());
-            poleData.setUpdatedBy(user.getFirstName()+" "+user.getLastName());
+            poleData.setUpdatedBy(user.getFirstName() + " " + user.getLastName());
             poleDataRepository.save(poleData);
-            BoxNumber boxNumber=null;
 
-            if(!Objects.equals(lvDataRegisterDto.poleRegisterationType(), "MV EXTENSION")){
+            BoxNumber boxNumber = null;
+            if (!Objects.equals(lvDataRegisterDto.poleRegisterationType(), "MV EXTENSION")) {
                 boxNumber = getBoxNumber(user, poleData);
             }
 
             for (LvMeterDataRequest meter : lvDataRegisterDto.meterDataDtoList()) {
                 MeterData meterData = new MeterData();
-
                 meterData.setComCableLength(meter.comCableLength());
                 meterData.setConnectedPhase(meter.connectedPhase());
                 meterData.setCustomerName(meter.customerName());
@@ -173,22 +185,21 @@ public class LvDataServiceImpl implements LvDataService {
                 meterData.setBoxAssemblyType(meter.assemblyType());
                 meterData.setMeterRegType("COMMISSIONING");
                 meterData.setCtRatio(meter.ctRatio());
-                if(!Objects.equals(meter.meterType(), "High Current")){
-                    if(boxNumber==null){
-                        boxNumber=getBoxNumber(user,poleData);
+
+                if (!Objects.equals(meter.meterType(), "High Current")) {
+                    if (boxNumber == null) {
+                        boxNumber = getBoxNumber(user, poleData);
                     }
                     meterData.setBoxNumber(boxNumber);
                 }
-                meterDataRepository.save(meterData);
 
+                meterDataRepository.save(meterData);
             }
 
-            return new ResponseDto(true, "Lv Network data Registered Successfully");
-        }
-        catch (Exception ex) {
-            log.error("Lv Pole data registeration failed..."+ex.getMessage());
-            return new ResponseDto(false, "Lv Network data Registration Failed!");
-
+            return new ResponseDto(true, "LV Network data registered successfully.");
+        } catch (Exception ex) {
+            log.error("LV Pole data registration failed: " + ex.getMessage(), ex);
+            return new ResponseDto(false, "LV Network data registration failed!");
         }
     }
 
@@ -218,56 +229,71 @@ public class LvDataServiceImpl implements LvDataService {
     @Transactional
     public ResponseDto updateLvData(LvDataResponse updateDto, String username) {
         try {
-            Optional<TxInfo> optionalTransformer= txInfoRepository.findById(updateDto.txId());
-            if(optionalTransformer.isEmpty()){
+            Optional<TxInfo> optionalTransformer = txInfoRepository.findById(updateDto.txId());
+            if (optionalTransformer.isEmpty()) {
                 return new ResponseDto(false, "Tx No Not Found!");
             }
             var transformer = optionalTransformer.get();
+
             Optional<PoleData> optionalPoleData = poleDataRepository.findById(updateDto.id());
-//            Optional<PoleData> optionalCheckData = poleDataRepository.findOneByPoleNoAndTxNo(updateDto.poleNo(), updateDto.txNo());
             Optional<PoleData> optionalCheckData = poleDataRepository.findOneByPoleNoAndTransformer(updateDto.poleNo(), transformer);
-            if(optionalPoleData.isEmpty()){
+
+            if (optionalPoleData.isEmpty()) {
                 return new ResponseDto(false, "Pole Not Found");
             }
-            var poleData= optionalPoleData.get();
+
+            var poleData = optionalPoleData.get();
             if (optionalCheckData.isPresent() && !optionalCheckData.get().getId().equals(poleData.getId())) {
                 return new ResponseDto(false, "Pole No. Already registered with the same Tx Code.");
             }
 
+            Long activeStatus = 1L;
+            Long deletedStatus = 3L;
             List<String> updateMeters = new ArrayList<>();
-            Long activeStatus= 1L;
-            Long deletedStatus= 3L;
+
+            // --- Step 1: Check for duplicate meter numbers inside the request ---
+            Set<String> meterNoSet = new HashSet<>();
+            for (LvMeterResponse meter : updateDto.meterDataDtoList()) {
+                if (!meterNoSet.add(meter.meterNo())) {
+                    return new ResponseDto(false, "Duplicate meter number found in request: " + meter.meterNo());
+                }
+            }
+
+            // --- Step 2: Validate meters and handle DB duplicates ---
+            User user = userRepository.findByUsername(username).get();
+            Status status = statusRepository.findById(activeStatus).get();
 
             for (LvMeterResponse meter : updateDto.meterDataDtoList()) {
-                MeterData meterData = meterDataRepository.findOneByMeterNoAndStatusId(meter.meterNo(),activeStatus);
-                if(meter.id()==null){
-                    if(meterData!=null){
-                        return new ResponseDto(false, "Meter No. "+meter.meterNo()+" Already registered in the system");
+                List<MeterData> activeMeters = meterDataRepository.findAllByMeterNoAndStatusId(meter.meterNo(), activeStatus);
+
+                if (meter.id() == null) {
+                    // New meter being added
+                    if (!activeMeters.isEmpty()) {
+                        return new ResponseDto(false, "Meter No. " + meter.meterNo() + " already registered in the system");
                     }
-                }
-                else{
-                    if(meterData!=null && !meterData.getId().equals(meter.id())){
-                        return new ResponseDto(false,"Meter No. "+meter.meterNo()+" Already registered in the system");
+                } else {
+                    // Existing meter being updated — deactivate any duplicate DB entries with same meterNo
+                    for (MeterData dbMeter : activeMeters) {
+                        if (!dbMeter.getId().equals(meter.id())) {
+                            dbMeter.setStatus(statusRepository.findById(deletedStatus).get());
+                            dbMeter.setUpdatedBy(user);
+                            dbMeter.setUpdatedOn(new Date());
+                            meterDataRepository.save(dbMeter);
+                        }
                     }
                 }
 
                 updateMeters.add(meter.meterNo());
             }
 
-
-            Status status = statusRepository.findById(activeStatus).get();
-            User user = userRepository.findByUsername(username).get();
-
-
-            LongLatResponse longLatResponse= this.utMtoLangLatService.convertUTMToLangLat(updateDto.northing(), updateDto.easting());
-//            poleData.setFeeder(updateDto.feeder());
+            // --- Step 3: Update Pole Data ---
+            LongLatResponse longLatResponse = this.utMtoLangLatService.convertUTMToLangLat(updateDto.northing(), updateDto.easting());
             poleData.setAssemblyType(updateDto.assemblyType());
             poleData.setBranchCode(updateDto.branchCode());
             poleData.setConductorType(updateDto.conductorType());
             poleData.setPoleType(updateDto.poleType());
             poleData.setPoleFeature(updateDto.poleFeature());
             poleData.setPoleNo(updateDto.poleNo());
-//            poleData.setTxNo(updateDto.txNo());
             poleData.setTransformer(transformer);
             poleData.setStatus(status);
             poleData.setLatitude(longLatResponse.latitude());
@@ -279,56 +305,52 @@ public class LvDataServiceImpl implements LvDataService {
             poleData.setPole_anomaly(updateDto.pole_anomaly());
             poleData.setPoleRegType(updateDto.poleRegistrationType());
             poleData.setUpdatedOn(new Date());
-            poleData.setUpdatedBy(user.getFirstName()+" "+user.getLastName());
+            poleData.setUpdatedBy(user.getFirstName() + " " + user.getLastName());
             poleDataRepository.save(poleData);
 
+            // --- Step 4: Mark removed meters as deleted ---
             for (MeterData meter : poleData.getMeterDataSet()) {
-                if(!updateMeters.contains(meter.getMeterNo())){
+                if (!updateMeters.contains(meter.getMeterNo())) {
                     meter.setStatus(statusRepository.findById(deletedStatus).get());
                     meterDataRepository.save(meter);
                 }
             }
 
+            // --- Step 5: Create or update meter data ---
             for (LvMeterResponse meter : updateDto.meterDataDtoList()) {
                 MeterData meterData;
-                if(meter.id()!=null){
-                    //TODO check for side effects
-                    meterData = meterDataRepository.findById(meter.id()).get();
-                    if (!checkIfEqual(meterData, meter)) {
+
+                if (meter.id() != null) {
+                    // Update existing meter
+                    meterData = meterDataRepository.findById(meter.id()).orElse(null);
+                    if (meterData != null && !checkIfEqual(meterData, meter)) {
                         poleUpdateData(poleData, status, meter, meterData);
-                        if(Objects.equals(meter.meterType(), "High Current")){
+                        if (Objects.equals(meter.meterType(), "High Current")) {
                             meterData.setBoxNumber(null);
                         }
                         meterData.setUpdatedBy(user);
                         meterData.setUpdatedOn(new Date());
                         meterDataRepository.save(meterData);
                     }
-
-                }else{
-                    meterData  = new MeterData();
+                } else {
+                    // Create new meter
+                    meterData = new MeterData();
                     poleUpdateData(poleData, status, meter, meterData);
                     meterData.setRegisteredBy(user.getId());
                     meterData.setMeterRegType("COMMISSIONING");
                     meterData.setRegisteredOn(new Date());
                     meterDataRepository.save(meterData);
                 }
-
-
             }
 
-
-
-//            this.updateHistoryDao.create(updateHistory);
-
             return new ResponseDto(true, "Lv Network data Registered Successfully");
-
         }
         catch (Exception ex) {
-            log.error("Lv Pole data update failed..."+ex.getMessage());
+            log.error("Lv Pole data update failed...", ex);
             return new ResponseDto(false, "Lv Network data Registration Failed!");
-
         }
     }
+
 
     private boolean checkIfEqual(MeterData meterData, LvMeterResponse meter) {
         // Check if any of the fields is different
