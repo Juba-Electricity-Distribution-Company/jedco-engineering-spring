@@ -283,6 +283,7 @@ public class CommissioningServiceImpl implements CommissioningService {
             User user = userRepository.findByUsername(username).get();
             Long activeStatus = 1L;
             List<MeterData> chkMeter = meterDataRepository.findAllByMeterNoAndStatusId(relocationDto.meterNo(), activeStatus);
+
             if (chkMeter.isEmpty()) {
                 return new ResponseDto(true, "Meter Not Found in the system");
             } else if (chkMeter.size() > 1) {
@@ -293,21 +294,26 @@ public class CommissioningServiceImpl implements CommissioningService {
             if (optionalDestPole.isEmpty()) {
                 return new ResponseDto(true, "Destination Pole Not Found!");
             }
-            Optional<BoxNumber> optionalDestBoxNumber = boxNumberRepository.findById(relocationDto.boxNoId());
-            if (optionalDestBoxNumber.isEmpty()) {
-                return new ResponseDto(true, "Box Number Not Found!");
+
+            //Box No is Optional ( for high current meters not required)
+            BoxNumber destBoxNumber = null;
+            if (relocationDto.boxNoId() != null) {
+                Optional<BoxNumber> optionalDestBoxNumber = boxNumberRepository.findById(relocationDto.boxNoId());
+                if (optionalDestBoxNumber.isEmpty()) {
+                    return new ResponseDto(true, "Box Number Not Found!");
+                }
+                destBoxNumber = optionalDestBoxNumber.get();
             }
+
             var destPole = optionalDestPole.get();
-            var destBoxNumber = optionalDestBoxNumber.get();
             MeterData meter = chkMeter.get(0);
+
             Long relocatedStatus = 8L;
             meter.setStatus(statusRepository.findById(relocatedStatus).get());
             meterDataRepository.save(meter);
 
-
             MeterData meterData = new MeterData();
             Date registeredOn = new Date();
-
 
             meterData.setComCableLength(meter.getComCableLength());
             meterData.setConnectedPhase(meter.getConnectedPhase());
@@ -325,10 +331,13 @@ public class CommissioningServiceImpl implements CommissioningService {
             meterData.setMeterRegType("METER RELOCATION");
             meterData.setRegisteredOn(registeredOn);
             meterData.setBoxAssemblyType(meter.getBoxAssemblyType());
+
+            //Set Box Number only if provided, otherwise null
             meterData.setBoxNumber(destBoxNumber);
+
             meterDataRepository.save(meterData);
 
-            MeterHistory history= new MeterHistory();
+            MeterHistory history = new MeterHistory();
             history.setMeterHistoryType(MeterHistoryType.METER_RELOCATION);
             history.setRegisteredOn(registeredOn);
             history.setCreatedBy(user);
