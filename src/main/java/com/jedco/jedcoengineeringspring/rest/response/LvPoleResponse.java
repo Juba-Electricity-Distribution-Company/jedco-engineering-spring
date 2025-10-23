@@ -7,6 +7,7 @@ public record LvPoleResponse(
         String branchCode,
         String poleNo,
         String boxNo,
+        String meterType,
         String poleType,
         String northing,
         String easting,
