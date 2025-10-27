@@ -12,6 +12,7 @@ import java.util.List;
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
 public interface PoleDataMapper {
 
+    @Mapping(target = "meterType", source="meterData.meterType")
     @Mapping(target = "boxNo", source = "meterData.boxNumber.formattedBoxNumber")
     @Mapping(target = "feeder", source = "poleData.transformer.feederCode")
     @Mapping(target = "txNo", source = "poleData.transformer.trafoCode")
