@@ -54,6 +54,9 @@ With these local overrides, open `http://localhost:8084/`. With the default TLS 
 # Compile, including Lombok and MapStruct generated code.
 ./mvnw compile
 
+# Run JWT filter tests without a database.
+./mvnw -Dtest=JwtAuthenticationFilterTests test
+
 # Run tests with development database and runtime configuration available.
 ./mvnw test
 
@@ -67,7 +70,7 @@ With these local overrides, open `http://localhost:8084/`. With the default TLS 
 java -jar target/jedco-engineering-spring-0.0.1-SNAPSHOT.jar
 ```
 
-The test suite includes isolated pole-data authorization tests and a `@SpringBootTest` context-load test. The context-load test starts the application context and requires a reachable database with a matching schema, the required configuration, and usable logging settings. There is no isolated test database or test profile. Skipping tests does not verify application startup.
+The test suite includes isolated JWT filter and pole-data authorization tests and a `@SpringBootTest` context-load test. The context-load test starts the application context and requires a reachable database with a matching schema, the required configuration, and usable logging settings. There is no isolated test database or test profile. Skipping tests does not verify application startup.
 
 ## API
 
@@ -87,6 +90,8 @@ The test suite includes isolated pole-data authorization tests and a `@SpringBoo
 Login accepts JSON with `username` and `password`. Authenticated requests use `Authorization: Bearer <token>`. Springdoc provides the Swagger UI at `/swagger-ui/index.html` and OpenAPI JSON at `/v3/api-docs`.
 
 The HTTP security configuration currently permits all URL patterns; authorization is enforced on methods that declare `@PreAuthorize`. Not every endpoint has that annotation. JWT access tokens default to three years and refresh tokens to seven days. These describe the current implementation, not a guarantee that all endpoints require authentication.
+
+Bearer JWT failures are rejected by the authentication filter with HTTP 401 and the security error fields `status`, `title`, and `message`. Expired tokens return `{"status":401,"title":"Unauthorized","message":"Authentication token has expired."}`. Malformed, empty, or invalid-signature tokens return `{"status":401,"title":"Unauthorized","message":"Invalid authentication token."}`. Rejected requests clear authentication and stop before controllers run. Token lifetimes and existing authorization rules are unchanged.
 
 `GlobalExceptionHandler` returns HTTP 200 with a failure payload for the application's `AuthenticationException` and `ResponseException`. Clients must inspect the response body's status as well as the HTTP status.
 
