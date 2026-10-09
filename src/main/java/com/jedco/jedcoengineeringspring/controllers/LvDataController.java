@@ -30,7 +30,7 @@ public class LvDataController {
     }
 
     @GetMapping("/getDataByUser")
-    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA')")
+    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA', 'VIEW_POLE_DATA')")
     @Operation(summary = "Count Activity Log", description = "The Dates should be provided in 'yyyy/MM/dd' String format.\n\n")
     public List<LvDataResponse> getDataByUser(@RequestParam("date") String date) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -39,26 +39,26 @@ public class LvDataController {
     }
 
     @GetMapping("/getDataByTx")
-    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA')")
+    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA', 'VIEW_POLE_DATA')")
     @Operation(summary = "Count Activity Log", description = "The Dates should be provided in 'yyyy/MM/dd' String format.\n\n")
     public List<LvDataResponse> getDataByTx(@RequestParam("feeder") String feeder, @RequestParam("txCode") String txCode) {
         return this.lvDataService.getDataByFeederAndTx(feeder, txCode);
     }
 
     @GetMapping("/getDataByFeederTxPole")
-    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA')")
+    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA', 'VIEW_POLE_DATA')")
     public List<LvDataResponse> getDataByFeederTxPole(@RequestParam("feeder") String feeder, @RequestParam("txCode") String txCode, @RequestParam("poleNo") String poleNo) {
         return this.lvDataService.getDataByFeederTxPole(feeder, txCode, poleNo);
     }
 
     @GetMapping("/getDataByPoleNo")
-    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA')")
+    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA', 'VIEW_POLE_DATA')")
     public List<LvDataResponse> getDataByPoleNo(@RequestParam("poleNo") String poleNo) {
         return this.lvDataService.getDataByPoleNo(poleNo);
     }
 
     @PostMapping("/registerLvData")
-    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA')")
+    @PreAuthorize("hasAuthority('REGISTER_LV_DATA') or @poleDataAuthorization.canRegister(#registerDto, authentication)")
     public ResponseDto registerLvData(@RequestBody LvDataRegisterRequest registerDto) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
@@ -66,7 +66,7 @@ public class LvDataController {
     }
 
     @PostMapping("/updateLvData")
-    @PreAuthorize("hasAnyAuthority('REGISTER_LV_DATA')")
+    @PreAuthorize("hasAuthority('REGISTER_LV_DATA') or @poleDataAuthorization.canUpdate(#registerDto, authentication)")
     public ResponseDto updateLvData(@RequestBody LvDataResponse registerDto) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
