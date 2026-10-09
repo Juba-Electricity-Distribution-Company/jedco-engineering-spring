@@ -54,6 +54,9 @@ With these local overrides, open `http://localhost:8084/`. With the default TLS 
 # Compile, including Lombok and MapStruct generated code.
 ./mvnw compile
 
+# Run JWT filter tests without a database.
+./mvnw -Dtest=JwtAuthenticationFilterTests test
+
 # Run tests with development database and runtime configuration available.
 ./mvnw test
 
@@ -67,7 +70,7 @@ With these local overrides, open `http://localhost:8084/`. With the default TLS 
 java -jar target/jedco-engineering-spring-0.0.1-SNAPSHOT.jar
 ```
 
-The current test suite contains one `@SpringBootTest` context-load test. It starts the application context and requires a reachable database with a matching schema, the required configuration, and usable logging settings. There is no isolated test database or test profile. Skipping tests does not verify application startup.
+The test suite includes isolated JWT filter and pole-data authorization tests and a `@SpringBootTest` context-load test. The context-load test starts the application context and requires a reachable database with a matching schema, the required configuration, and usable logging settings. There is no isolated test database or test profile. Skipping tests does not verify application startup.
 
 ## API
 
@@ -88,7 +91,29 @@ Login accepts JSON with `username` and `password`. Authenticated requests use `A
 
 The HTTP security configuration currently permits all URL patterns; authorization is enforced on methods that declare `@PreAuthorize`. Not every endpoint has that annotation. JWT access tokens default to three years and refresh tokens to seven days. These describe the current implementation, not a guarantee that all endpoints require authentication.
 
+Bearer JWT failures are rejected by the authentication filter with HTTP 401 and the security error fields `status`, `title`, and `message`. Expired tokens return `{"status":401,"title":"Unauthorized","message":"Authentication token has expired."}`. Malformed, empty, or invalid-signature tokens return `{"status":401,"title":"Unauthorized","message":"Invalid authentication token."}`. Rejected requests clear authentication and stop before controllers run. Token lifetimes and existing authorization rules are unchanged.
+
 `GlobalExceptionHandler` returns HTTP 200 with a failure payload for the application's `AuthenticationException` and `ResponseException`. Clients must inspect the response body's status as well as the HTTP status.
+
+### Pole-data authorities
+
+Existing `REGISTER_LV_DATA` role assignments retain access to all existing LV operations. Granular authorities are alternatives for these routes (all under `/Engineering/lvData`):
+
+| Routes | Granular authority |
+| --- | --- |
+| `GET /getDataByUser`, `/getDataByTx`, `/getDataByFeederTxPole`, `/getDataByPoleNo` | `VIEW_POLE_DATA` |
+| `POST /registerLvData` | `REGISTER_POLE_DATA`; also `REGISTER_METER_DATA` when the request includes meters |
+| `POST /updateLvData` | `UPDATE_POLE_DATA` for pole/remark edits, existing meter edits, or removals; `REGISTER_METER_DATA` for new meters (null meter ID) |
+
+For granular users, combined requests require each applicable authority. A meter-only update must submit unchanged pole fields and retain unchanged existing meters; it cannot edit or remove existing data. Routes, DTOs, and responses are unchanged. Shared lookup endpoints that previously had no method authorization keep their existing access rules, as do commissioning and box-number operations.
+
+Authorities are loaded from `jd_user_action.action_name` through existing `jd_role_definition` role assignments. Provision the four new action names in the externally managed database, with the appropriate action group/status and role assignments. Do not remove or rename `REGISTER_LV_DATA` or automatically grant new actions to existing roles. No schema change is required; this application does not seed these records.
+
+Run the isolated authorization tests without a database:
+
+```bash
+./mvnw -Dtest=LvDataAuthorizationTests,PoleDataAuthorizationTests test
+```
 
 ## Source layout
 

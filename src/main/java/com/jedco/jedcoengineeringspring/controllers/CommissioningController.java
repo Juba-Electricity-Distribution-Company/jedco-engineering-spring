@@ -92,7 +92,7 @@ public class CommissioningController {
     }
 
     @GetMapping("/getBoxNumbers/{poleId}")
-    @PreAuthorize("hasAnyAuthority('REGISTER_COMMISSIONING')")
+    @PreAuthorize("hasAnyAuthority('REGISTER_COMMISSIONING','VIEW_POLE_DATA')")
     public List<BoxNumberResponse> getBoxNumbers(@PathVariable("poleId") Long poleId) {
         return this.lvCommissioningService.getBoxNumbers(poleId);
     }
